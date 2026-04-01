@@ -30,14 +30,17 @@ export async function POST() {
 
   const { data: run, error: runCreateError } = await supabase
     .from("report_runs")
-    .insert({ status: "running", started_at: new Date().toISOString() })
+    .insert({
+      run_status: "running",
+      period_start: new Date().toISOString(),
+    })
     .select("id")
     .single();
 
   if (runCreateError || !run) {
     return NextResponse.json(
       { status: "failed", error: "Could not create report run" },
-      { status: 500 },
+      { status: 500 }
     );
   }
 
@@ -54,9 +57,7 @@ export async function POST() {
       .order("published_at", { ascending: false })
       .limit(30);
 
-    if (latestItemsError) {
-      throw latestItemsError;
-    }
+    if (latestItemsError) throw latestItemsError;
 
     for (const item of latestItems ?? []) {
       await summarizeContentItem({
@@ -73,9 +74,7 @@ export async function POST() {
       .order("created_at", { ascending: false })
       .limit(10);
 
-    if (summarizedRowsError) {
-      throw summarizedRowsError;
-    }
+    if (summarizedRowsError) throw summarizedRowsError;
 
     const topItems: TopSummarizedItem[] = (summarizedRows ?? []).map((row) => {
       const contentItem = Array.isArray(row.content_items)
@@ -92,52 +91,43 @@ export async function POST() {
     });
 
     const insights = await synthesizeTopItems(topItems);
-    if (!insights) {
-      throw new Error("Could not synthesize insights");
-    }
+    if (!insights) throw new Error("Could not synthesize insights");
 
-    const report = await generateFinalReport(insights, run.id, weekOfDate);
-    if (!report) {
-      throw new Error("Could not generate final report");
-    }
-
-    const { data: latestReport, error: latestReportError } = await supabase
-      .from("reports")
-      .select("id")
-      .eq("report_run_id", run.id)
-      .single();
-
-    if (latestReportError || !latestReport) {
-      throw new Error("Report saved but could not fetch report id");
-    }
+    const report = await generateFinalReport(
+      insights,
+      run.id,
+      weekOfDate
+    );
+    if (!report) throw new Error("Could not generate final report");
 
     await supabase
       .from("report_runs")
-      .update({ status: "completed", completed_at: new Date().toISOString() })
+      .update({
+        run_status: "completed",
+        period_end: new Date().toISOString(),
+      })
       .eq("id", run.id);
 
     return NextResponse.json({
       status: "completed",
-      report_id: latestReport.id,
+      report_id: run.id,
     });
+
   } catch (error) {
     await supabase
       .from("report_runs")
       .update({
-        status: "failed",
-        completed_at: new Date().toISOString(),
-        error_message:
-          error instanceof Error ? error.message : "Unknown error",
+        run_status: "failed",
+        period_end: new Date().toISOString(),
       })
       .eq("id", run.id);
 
     return NextResponse.json(
       {
         status: "failed",
-        report_id: null,
         error: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
