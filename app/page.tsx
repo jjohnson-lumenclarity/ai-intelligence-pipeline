@@ -2,11 +2,17 @@ import { supabase } from "@/lib/db";
 import RunPipelineButton from "@/app/RunPipelineButton";
 
 export default async function DashboardPage() {
-  const [{ count: sourcesCount }, { count: contentItemsCount }, { data: latestReport }] = await Promise.all([
-    supabase.from("sources").select("*", { count: "exact", head: true }),
-    supabase.from("content_items").select("*", { count: "exact", head: true }),
-    supabase.from("reports").select("id, title, content, created_at").order("created_at", { ascending: false }).limit(1).maybeSingle(),
-  ]);
+  const [{ count: sourcesCount }, { count: contentItemsCount }, { data: latestReport }] =
+    await Promise.all([
+      supabase.from("sources").select("*", { count: "exact", head: true }),
+      supabase.from("content_items").select("*", { count: "exact", head: true }),
+      supabase
+        .from("reports")
+        .select("id, title, content, created_at")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
 
   return (
     <main>
@@ -23,7 +29,9 @@ export default async function DashboardPage() {
         <article>
           <h3>{latestReport.title ?? "Untitled report"}</h3>
           <p>Created: {latestReport.created_at}</p>
-          <pre style={{ whiteSpace: "pre-wrap" }}>{latestReport.content}</pre>
+          <pre style={{ whiteSpace: "pre-wrap" }}>
+            {latestReport.content}
+          </pre>
         </article>
       ) : (
         <p>No reports yet.</p>
