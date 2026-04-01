@@ -29,20 +29,27 @@ function toIsoDate(value?: string): string | null {
 
 function normalizeItem(item: Item): NormalizedRssItem | null {
   const url = item.link?.trim() ?? "";
-  const externalId = (item.guid || url).trim();
+  const externalId = (item.guid ?? url).trim();
 
   if (!externalId || !url) {
     return null;
   }
 
-  const raw = item.content ?? item["content:encoded"] ?? item.contentSnippet ?? item.summary ?? "";
+  const raw =
+    item.content ??
+    item["content:encoded"] ??
+    item.contentSnippet ??
+    item.summary ??
+    "";
+
+  const cleanText = stripHtml(String(raw));
 
   return {
     external_id: externalId,
     title: (item.title ?? "Untitled").trim(),
     url,
     published_at: toIsoDate(item.isoDate ?? item.pubDate),
-    raw_text: stripHtml(String(raw)),
+    raw_text: cleanText,
   };
 }
 
@@ -50,7 +57,7 @@ async function getOrCreateRssSource(feedUrl: string): Promise<string> {
   const { data: existing, error: findError } = await supabase
     .from("sources")
     .select("id")
-    .eq("source_type", "rss")
+    .eq("type", "rss")
     .eq("url", feedUrl)
     .maybeSingle();
 
@@ -60,9 +67,11 @@ async function getOrCreateRssSource(feedUrl: string): Promise<string> {
   const { data: created, error: createError } = await supabase
     .from("sources")
     .insert({
-      source_type: "rss",
+      type: "rss",
       name: feedUrl,
       url: feedUrl,
+      active: true,
+      priority: 1,
     })
     .select("id")
     .single();
@@ -78,34 +87,50 @@ export async function ingestRssFeeds(feedUrls: string[]): Promise<number> {
     const sourceId = await getOrCreateRssSource(feedUrl);
     const feed = await fetchFeed(feedUrl);
 
-    const normalized = (feed.items ?? []).map(normalizeItem).filter((item): item is NormalizedRssItem => !!item);
+    const normalized = (feed.items ?? [])
+      .map(normalizeItem)
+      .filter((item): item is NormalizedRssItem => !!item);
+
     if (normalized.length === 0) continue;
 
     const { data: existingItems, error: existingError } = await supabase
       .from("content_items")
-      .select("source_item_id, url")
+      .select("external_id, url")
       .eq("source_id", sourceId);
 
     if (existingError) throw existingError;
 
-    const existingExternalIds = new Set((existingItems ?? []).map((item) => item.source_item_id));
-    const existingUrls = new Set((existingItems ?? []).map((item) => item.url));
+    const existingExternalIds = new Set(
+      (existingItems ?? []).map((item) => item.external_id).filter(Boolean),
+    );
+    const existingUrls = new Set(
+      (existingItems ?? []).map((item) => item.url).filter(Boolean),
+    );
 
     const toInsert = normalized
-      .filter((item) => !existingExternalIds.has(item.external_id) && !existingUrls.has(item.url))
+      .filter(
+        (item) =>
+          !existingExternalIds.has(item.external_id) &&
+          !existingUrls.has(item.url),
+      )
       .map((item) => ({
         source_id: sourceId,
-        source_item_id: item.external_id,
+        external_id: item.external_id,
         title: item.title,
         url: item.url,
-        content_text: item.raw_text,
         published_at: item.published_at,
-        raw_payload: item,
+        content_type: "rss",
+        raw_text: item.raw_text,
+        cleaned_text: item.raw_text,
+        status: "new",
       }));
 
     if (toInsert.length === 0) continue;
 
-    const { error: insertError } = await supabase.from("content_items").insert(toInsert);
+    const { error: insertError } = await supabase
+      .from("content_items")
+      .insert(toInsert);
+
     if (insertError) throw insertError;
 
     insertedCount += toInsert.length;
