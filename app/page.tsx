@@ -8,7 +8,7 @@ export default async function DashboardPage() {
       supabase.from("content_items").select("*", { count: "exact", head: true }),
       supabase
         .from("reports")
-        .select("id, title, content, created_at")
+        .select("id, title, markdown, created_at")
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
@@ -30,7 +30,7 @@ export default async function DashboardPage() {
           <h3>{latestReport.title ?? "Untitled report"}</h3>
           <p>Created: {latestReport.created_at}</p>
           <pre style={{ whiteSpace: "pre-wrap" }}>
-            {latestReport.content}
+            {latestReport.markdown}
           </pre>
         </article>
       ) : (
