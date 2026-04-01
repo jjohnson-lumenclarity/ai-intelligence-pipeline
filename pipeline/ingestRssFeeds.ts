@@ -37,7 +37,6 @@ function normalizeItem(item: Item): NormalizedRssItem | null {
 
   const raw =
     item.content ??
-    item["content:encoded"] ??
     item.contentSnippet ??
     item.summary ??
     "";
