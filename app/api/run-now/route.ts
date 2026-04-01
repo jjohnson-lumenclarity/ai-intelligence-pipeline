@@ -3,7 +3,11 @@ import { supabase } from "@/lib/db";
 import { ingestRssFeeds } from "@/pipeline/ingestRssFeeds";
 import { ingestYouTubeChannels } from "@/pipeline/ingestYouTubeChannels";
 import { summarizeContentItem } from "@/pipeline/summarizeContentItem";
-import { generateFinalReport, synthesizeTopItems, type TopSummarizedItem } from "@/pipeline/reportBuilder";
+import {
+  generateFinalReport,
+  synthesizeTopItems,
+  type TopSummarizedItem,
+} from "@/pipeline/reportBuilder";
 
 function parseList(input?: string): string[] {
   return (input ?? "")
@@ -31,7 +35,10 @@ export async function POST() {
     .single();
 
   if (runCreateError || !run) {
-    return NextResponse.json({ status: "failed", error: "Could not create report run" }, { status: 500 });
+    return NextResponse.json(
+      { status: "failed", error: "Could not create report run" },
+      { status: 500 },
+    );
   }
 
   try {
@@ -43,7 +50,7 @@ export async function POST() {
 
     const { data: latestItems, error: latestItemsError } = await supabase
       .from("content_items")
-      .select("id, title, url, content_text, published_at")
+      .select("id, title, url, cleaned_text, published_at")
       .order("published_at", { ascending: false })
       .limit(30);
 
@@ -56,13 +63,13 @@ export async function POST() {
         id: item.id,
         title: item.title,
         url: item.url,
-        content_text: item.content_text,
+        content_text: item.cleaned_text,
       });
     }
 
     const { data: summarizedRows, error: summarizedRowsError } = await supabase
       .from("item_summaries")
-      .select("content_item_id, summary_text, content_items(title, published_at)")
+      .select("content_item_id, summary, content_items(title, published_at)")
       .order("created_at", { ascending: false })
       .limit(10);
 
@@ -71,13 +78,15 @@ export async function POST() {
     }
 
     const topItems: TopSummarizedItem[] = (summarizedRows ?? []).map((row) => {
-      const contentItem = Array.isArray(row.content_items) ? row.content_items[0] : row.content_items;
+      const contentItem = Array.isArray(row.content_items)
+        ? row.content_items[0]
+        : row.content_items;
 
       return {
         content_item_id: row.content_item_id,
         title: contentItem?.title,
         published_at: contentItem?.published_at,
-        summary_text: parseSummaryText(row.summary_text),
+        summary_text: parseSummaryText(row.summary),
         source: "mixed",
       };
     });
@@ -107,14 +116,18 @@ export async function POST() {
       .update({ status: "completed", completed_at: new Date().toISOString() })
       .eq("id", run.id);
 
-    return NextResponse.json({ status: "completed", report_id: latestReport.id });
+    return NextResponse.json({
+      status: "completed",
+      report_id: latestReport.id,
+    });
   } catch (error) {
     await supabase
       .from("report_runs")
       .update({
         status: "failed",
         completed_at: new Date().toISOString(),
-        error_message: error instanceof Error ? error.message : "Unknown error",
+        error_message:
+          error instanceof Error ? error.message : "Unknown error",
       })
       .eq("id", run.id);
 
