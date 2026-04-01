@@ -29,7 +29,7 @@ function toIsoDate(value?: string): string | null {
 
 function normalizeItem(item: Item): NormalizedRssItem | null {
   const url = item.link?.trim() ?? "";
-  const externalId = (item.guid ?? item.id ?? url).trim();
+  const externalId = (item.guid || url).trim();
 
   if (!externalId || !url) {
     return null;
